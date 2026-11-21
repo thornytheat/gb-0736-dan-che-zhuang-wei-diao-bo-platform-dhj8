@@ -25,6 +25,7 @@ CSV 上限为 256 KiB 和 2000 条逻辑记录。`line` 是记录起始的物理
 - 缩容时多出的车辆转站内暂存。暂存车占用库存，遇到复开、借车或装车腾出的桩，先在站内补桩。车池只在成功借还时增减。
 - 15 分钟潮汐槽位的占用和空桩取窗口最后状态，借还尝试和未成交是窗口内发生次数。关站标记反映窗口最后状态。点击任一槽位可定位该站和时段的时间线。失败需求留存原编号和原因，并保持库存原值。
 - 调拨行程先校验载重、时间和车辆路径，再按对应该时点的桩位状态模拟装卸。每辆车在装车时扣出站库存，卸车后才进入目标站。站点容不下整趟或装车数量不足时整份试算失败。草稿最多 20 趟。
+- 改派把受阻行程的卸车站换成落地站，落地时点为故障时点加最短通行时间；该车在受阻行程之后尚未出发的行程一并作废。回执的 `invalidated_at` 是旧方案失效时点（故障时点），`effective_from` 是落地卸车时点。
 - 比较使用同一组已采信事件，差量为方案未成交数减基准未成交数。负数表示净改善，原因改变但仍未成交的尝试也进入逐笔差异。
 
 ## API 写入与证据
@@ -34,10 +35,17 @@ CSV 上限为 256 KiB 和 2000 条逻辑记录。`line` 是记录起始的物理
 | `POST /api/intake` | `multipart/form-data` 的 `expected` 和 `events` | 以替换事件和当前方案生成新班次 |
 | `POST /api/dispatch/preview` | JSON `run`、`legs` | 返回试算差量、调拨动作、勾稽与槽位 |
 | `POST /api/dispatch/publish` | JSON `expected`、`legs` | 校验并发布方案 |
+| `POST /api/divert/options` | JSON `run`、`fault` | 逐站试算落地结果，不改动已发布方案 |
+| `POST /api/divert/preview` | JSON `run`、`fault` | 返回替换行程、改派回执与各去向比较 |
+| `POST /api/divert/publish` | JSON `expected`、`fault` | 封存故障报告并发布改派方案 |
 | `POST /api/runs/rerun` | JSON `expected` | 按封存原文件与已发布方案复算 |
 | `POST /api/runs/restore` | JSON `expected`、`target` | 原子回切到归档版本 |
 
-`expected` 为写入时所见当前班次完整编号。查询七个阶段时可通过 `?run=<编号>` 固定证据版本。写入响应的 `created` 表示新增归档，`changed` 表示响应编号与所提交的 `expected` 不同。无效请求返回 `code`、`message`、`details`。
+`fault` 为 `{id, leg, at, target, note}`：`id` 与 `leg` 用字母数字及 `_`/`-`，最长 32；`at` 必须落在该趟装车与卸车间；`target` 为落地站，须存在且不同于原卸车站；`note` 可空。`options` 与 `preview` 不写档案，`publish` 才落库。
+
+改派记录存于 `faults`（故障报告，含故障当时的整份原方案）与 `diversions`（故障编号到新班次的唯一映射）。同一故障编号重试返回同一班次且 `reused` 为真，不新增第二份改派；同一编号内容不一致返回 `FAULT_CONFLICT`。改派发布失败时事务回滚，旧班次仍为当前版本，车辆总数守恒由同一库存勾稽校验保证。
+
+`expected` 为写入时所见当前班次完整编号。查询各阶段时可通过 `?run=<编号>` 固定证据版本。写入响应的 `created` 表示新增归档，`changed` 表示响应编号与所提交的 `expected` 不同，`reused` 表示同一故障沿用既有改派。无效请求返回 `code`、`message`、`details`。
 
 运行编号由原始文件的 SHA-256 与字节数、规范化方案和规则版本计算。相同输入重跑会比对已存结果，原生成时间、原耗时与证据文件保持一致。证据 SHA-256 针对 `evidence` 对象，编码为 UTF-8，键名排序、紧凑 JSON，中文直接写入。只有下载包外层另附证据摘要。
 

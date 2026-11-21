@@ -1,0 +1,35 @@
+<div class="stage" id="stage-divert" hidden>
+  <section class="panel">
+    <div class="panel__head"><div><h2>临时管制故障</h2><span class="subtle" id="divert-hint">车辆在途受阻，先落地再改派</span></div><span class="subtle" id="divert-state"></span></div>
+    <form class="panel__body" id="divert-form">
+      <div class="inline-form">
+        <label>故障编号 <input id="fault-id" required maxlength="32" placeholder="F-01"></label>
+        <label>受阻行程 <select id="fault-leg" required></select></label>
+        <label>故障时点 <input id="fault-at" type="datetime-local" step="any" required></label>
+        <label>落地站 <select id="fault-target" required></select></label>
+        <label>备注 <input id="fault-note" maxlength="120" placeholder="临时管制"></label>
+      </div>
+      <div class="actions form-actions">
+        <button class="btn" id="divert-compare" type="button">比较去向</button>
+        <button class="btn" id="divert-trial" type="button">试算改派</button>
+        <button class="btn btn--primary" id="divert-publish" type="button" disabled>发布改派</button>
+      </div>
+    </form>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>可落地站比较</h2><span class="subtle">就近抢高峰 / 退回出发站</span></div>
+    <div class="ledger-scroll" id="divert-options"></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><div><h2>改派回执</h2><span class="subtle" id="receipt-state">尚未试算</span></div><a class="btn" id="receipt-export" aria-disabled="true">下载回执</a></div>
+    <div id="receipt-kpis" class="panel__body diff-grid"></div>
+    <div class="ledger-scroll" id="receipt-unload"></div>
+    <div class="ledger-scroll" id="receipt-stock"></div>
+    <div class="ledger-scroll" id="receipt-compare"></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>故障与旧方案留档</h2><span class="subtle">原方案不会被删除</span></div>
+    <div class="ledger-scroll" id="divert-faults"></div>
+    <div class="ledger-scroll" id="divert-history"></div>
+  </section>
+</div>

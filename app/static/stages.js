@@ -1,3 +1,4 @@
+import {apiTime, local} from './dispatch.js';
 import {$, clock, date, kind, kpis, label, node, outcome, signed, table, time} from './view.js';
 
 const lineRows = rows => rows.map(row => [row.line, row.code, label(row.code), row.raw.join(' ｜ ')]);
@@ -153,7 +154,111 @@ export function runs(meta, openRun) {
     const button = node('button', row.id === manifest.id ? '正在查看' : '查看', 'btn');
     button.disabled = row.id === manifest.id;
     button.addEventListener('click', () => openRun(row.id));
+    const state = `${row.active ? '当前班次' : '历史留档'}${row.diverted ? ' · 改派' : ''}`;
     return [row.shift, row.id.slice(0, 12), `${date(row.generated_at)} ${clock(row.generated_at)}`, row.delta,
-      row.active ? '当前班次' : '历史留档', button];
+      state, button];
   }));
+}
+
+const roleLabel = role => role === 'origin' ? '退回出发站' : '就近落地';
+
+function divertSetup(data, shift) {
+  const legs = $('fault-leg');
+  const target = $('fault-target');
+  if (legs.dataset.run !== data.run) {
+    legs.dataset.run = data.run;
+    legs.replaceChildren(...data.plan.map(leg => {
+      const option = node('option', `${leg.id} · ${shift.stations[leg.from].name} → ${shift.stations[leg.to].name} · ${leg.count} 辆`);
+      option.value = leg.id;
+      return option;
+    }));
+    target.replaceChildren(...Object.entries(shift.stations).map(([code, row]) => {
+      const option = node('option', `${row.name} · ${code}`);
+      option.value = code;
+      return option;
+    }));
+    const struck = data.plan.find(leg => leg.id === legs.value) || data.plan[0];
+    target.value = struck.from;
+    // 默认取装车与卸车之间的中点，故障必须落在该趟运输途中。
+    const middle = (Date.parse(struck.depart) + Date.parse(struck.arrive)) / 2;
+    const rounded = Math.round(middle / 60000) * 60000;
+    $('fault-at').value = local(new Date(rounded).toISOString());
+  }
+  const leg = data.plan.find(row => row.id === legs.value);
+  if (leg) $('divert-hint').textContent =
+    `${leg.id} · ${shift.stations[leg.from].name} → ${shift.stations[leg.to].name} · 载 ${leg.count} 辆 · 原定 ${time(leg.arrive)} 卸车`;
+  $('divert-state').textContent = data.divert ? '当前已是改派方案' : '当前为原方案';
+}
+
+export function faultForm() {
+  return {id: $('fault-id').value.trim(), leg: $('fault-leg').value, at: apiTime($('fault-at').value),
+    target: $('fault-target').value, note: $('fault-note').value.trim()};
+}
+
+function showOptions(choice, shift) {
+  if (!choice) { table('divert-options', [], [], '点「比较去向」查看各落地站结果'); return; }
+  table('divert-options', ['去向', '性质', '落地时点', '落地后空桩', '未成交', '差量', '结果'], choice.options.map(row => {
+    const name = shift.stations[row.target].name;
+    if (row.status !== 'ok') {
+      return [name, roleLabel(row.role), '—', '—', '—', '—', node('span', label(row.code), 'bad')];
+    }
+    const landing = row.landing;
+    return [name, roleLabel(row.role), clock(row.unload.at), `${landing.free_after} / ${landing.capacity}`,
+      row.missed, signed(row.delta), node('span', '可落地', 'ok')];
+  }));
+}
+
+function showReceipt(result, shift) {
+  if (!result) {
+    $('receipt-state').textContent = '尚未试算';
+    $('receipt-kpis').replaceChildren();
+    table('receipt-unload', [], [], '暂无回执');
+    table('receipt-stock', [], [], '暂无回执');
+    table('receipt-compare', [], [], '暂无回执');
+    $('receipt-export').removeAttribute('href');
+    $('receipt-export').setAttribute('aria-disabled', 'true');
+    return;
+  }
+  const copy = result.receipt;
+  const station = names(shift);
+  $('receipt-state').textContent = result.reused ? '同一故障已发布 · 沿用原回执' : '改派回执';
+  $('receipt-kpis').replaceChildren(
+    diffCell('最终卸车', station(copy.target), '', roleLabel(copy.role)),
+    diffCell('落地时点', clock(copy.effective_from), ''),
+    diffCell('旧方案失效', clock(copy.invalidated_at), 'warn', '故障时点起'),
+    diffCell('未成交', `${copy.comparison.before} → ${copy.comparison.after}`, copy.comparison.delta > 0 ? 'bad' : 'ok',
+      `差量 ${signed(copy.comparison.delta)} 笔`),
+    diffCell('车辆总数', `${copy.fleet.closing_before} → ${copy.fleet.closing_after}`, copy.fleet.ok ? 'ok' : 'bad',
+      `期初 ${copy.fleet.opening} 辆`));
+  table('receipt-unload', ['替换行程', '落地站', '落地时点', '卸车数'],
+    copy.unload.map(row => [row.leg, station(row.station), clock(row.at), row.count]), '没有改动行程');
+  table('receipt-stock', ['站点', '桩上（前 → 后）', '空桩（前 → 后）', '暂存（前 → 后）'],
+    copy.stock.map(row => [station(row.station), `${row.docked.before} → ${row.docked.after}`,
+      `${row.free.before} → ${row.free.after}`, `${row.held.before} → ${row.held.after}`]));
+  table('receipt-compare', ['时点', '站点', '事件号', '尝试', '原方案', '改派', '源行'],
+    copy.comparison.changes.map(row => [clock(row.at), station(row.station), row.id, kind(row.kind),
+      outcome(row.before), outcome(row.after), row.line]), '未成交没有变化');
+  $('receipt-export').href = result.stored ? `/api/divert/receipts/${result.id}.json` : '';
+  if (result.stored) $('receipt-export').removeAttribute('aria-disabled');
+  else $('receipt-export').setAttribute('aria-disabled', 'true');
+}
+
+function showFaults(data, shift) {
+  table('divert-faults', ['故障', '受阻行程', '故障时点', '原卸车站', '改派去向', '关联班次'],
+    data.faults.map(row => {
+      const found = data.published[row.id];
+      return [row.report.id, row.report.leg, clock(row.report.at), names(shift)(row.report.to),
+        found ? `${names(shift)(found.option)} · ${found.run_id.slice(0, 12)}` : '尚未改派', row.run_id.slice(0, 12)];
+    }), '尚无故障记录');
+  table('divert-history', ['班次', '生成时间', '未成交差量', '状态'], data.history.map(row =>
+    [row.id.slice(0, 12), `${date(row.generated_at)} ${clock(row.generated_at)}`, row.delta,
+      `${row.active ? '当前班次' : '历史留档'}${row.diverted ? ' · 改派' : ''}`]));
+}
+
+export function divert(data, shift, choice, trial) {
+  divertSetup(data, shift);
+  showOptions(choice, shift);
+  showReceipt(trial || (data.divert ? {id: data.run, receipt: data.divert.receipt, reused: false, stored: true} : null), shift);
+  showFaults(data, shift);
+  $('divert-publish').disabled = !trial || trial.reused || !trial.stored;
 }

@@ -14,8 +14,10 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def manifest(sources, legs, elapsed_ms):
+def manifest(sources, legs, elapsed_ms, divert=None):
     inputs = {name: {'sha256': digest(raw), 'bytes': len(raw)} for name, raw in sources.items()}
     identity = {'inputs': inputs, 'rule_version': RULE_VERSION, 'plan': legs}
+    if divert is not None:
+        identity['divert'] = divert
     return dict(identity, id=digest(canonical(identity).encode()), zone=ZONE,
                 generated_at=stamp(datetime.now(timezone.utc)), elapsed_ms=elapsed_ms)

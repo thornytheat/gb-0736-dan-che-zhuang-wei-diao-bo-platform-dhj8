@@ -30,7 +30,11 @@ def publish(store, run_id, *, draft=None, events=None):
     sources = store.sources(run_id)
     if events is not None:
         sources['events'] = events
-    snapshot = run_shift(sources, active['dispatch']['legs'] if draft is None else draft)
+    divert = active.get('divert') if draft is None and events is None else None
+    snapshot = run_shift(sources, active['dispatch']['legs'] if draft is None else draft,
+                         divert['identity'] if divert else None)
+    if divert is not None:
+        snapshot['divert'] = divert
     created = store.publish(snapshot, sources, run_id)
     new_id = snapshot['manifest']['id']
     return {'id': new_id, 'created': created, 'changed': new_id != run_id}

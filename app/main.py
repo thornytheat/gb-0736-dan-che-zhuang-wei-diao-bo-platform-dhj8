@@ -11,6 +11,7 @@ from .modules.archive.service import seed
 from .modules.capacity.handler import bp as capacity
 from .modules.demand.handler import bp as demand
 from .modules.dispatch.handler import bp as dispatch
+from .modules.divert.handler import bp as divert
 from .modules.intake.handler import bp as intake
 from .modules.inventory.handler import bp as inventory
 from .modules.replay.handler import bp as replay
@@ -24,7 +25,7 @@ def create_app(path=None):
     db = Store(path or os.getenv('CYCLE_DB', 'var/shift.sqlite3'))
     app.extensions['shift_store'] = db
     seed(db)
-    for blueprint in (intake, capacity, replay, demand, dispatch, inventory, archive):
+    for blueprint in (intake, capacity, replay, demand, dispatch, divert, inventory, archive):
         app.register_blueprint(blueprint)
 
     @app.errorhandler(DomainError)

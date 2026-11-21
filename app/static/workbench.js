@@ -6,6 +6,7 @@ const anchors = [...document.querySelectorAll('.rail-nav [data-nav]')];
 const keys = anchors.map(link => link.dataset.nav);
 let current, meta, data, extra, selected, revision = 0;
 let draftRun, previewResult, previewedLegs;
+let divertRun, divertChoice, divertTrial;
 let busy = false;
 
 function runId() { return meta.manifest.id; }
@@ -35,6 +36,13 @@ function paint() {
     }
     stages.dispatch(previewResult || data, meta.shift, Boolean(previewResult));
     $('publish').disabled = !previewedLegs || runId() !== activeId() || busy;
+  } else if (current === 'divert') {
+    if (divertRun !== runId()) {
+      divertRun = runId();
+      divertChoice = divertTrial = null;
+    }
+    stages.divert(data, meta.shift, divertChoice, divertTrial);
+    $('divert-publish').disabled = $('divert-publish').disabled || runId() !== activeId() || busy;
   } else stages[current](data, meta.shift, extra);
 }
 
@@ -84,7 +92,9 @@ async function mutate(action, success) {
   if (busy) return;
   busy = true;
   const token = revision;
-  const form = current === 'dispatch' ? $('dispatch-form') : current === 'intake' ? $('upload-form') : null;
+  const form = current === 'dispatch' ? $('dispatch-form')
+    : current === 'intake' ? $('upload-form')
+    : current === 'divert' ? $('divert-form') : null;
   if (form) form.inert = true;
   $('rerun').disabled = $('restore').disabled = true;
   notice('正在计算…');
@@ -134,6 +144,11 @@ $('upload-form').addEventListener('submit', event => {
   });
 });
 $('dispatch-form').addEventListener('input', invalidate);
+$('divert-form').addEventListener('input', () => {
+  divertChoice = divertTrial = null;
+  notice();
+  paint();
+});
 $('dispatch-form').addEventListener('submit', event => {
   event.preventDefault();
   const legs = readDraft();
@@ -165,4 +180,29 @@ $('add-leg').addEventListener('click', () => {
   fillDraft([...legs, newLeg(legs, meta.shift)], meta.shift, invalidate);
   invalidate();
 });
+$('divert-compare').addEventListener('click', () => {
+  if (!$('divert-form').reportValidity()) return;
+  mutate(() => post('/api/divert/options', {run: runId(), fault: stages.faultForm()}), result => {
+    divertChoice = result;
+    notice('去向已比较');
+  });
+});
+$('divert-trial').addEventListener('click', () => {
+  if (!$('divert-form').reportValidity()) return;
+  mutate(() => post('/api/divert/preview', {run: runId(), fault: stages.faultForm()}), result => {
+    divertTrial = result;
+    divertChoice = {options: result.options};
+    notice('改派试算完成');
+  });
+});
+$('divert-publish').addEventListener('click', () => mutate(
+  () => post('/api/divert/publish', {expected: runId(), fault: stages.faultForm()}),
+  async result => {
+    divertTrial = result;
+    draftRun = null;
+    await load(null);
+    divertTrial = result;
+    paint();
+    notice(result.reused ? '同一故障已发布过改派 · 沿用回执' : '改派已发布');
+  }));
 load(null);

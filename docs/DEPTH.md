@@ -12,8 +12,9 @@
 | M3 借还回放 | 按时点查看可借、可还、暂存状态 | `GET /api/replay` | `app/modules/replay/service.py` `app/modules/replay/schedule.py` | `tests/test_replay.py` |
 | M4 溢出需求 | 按站、时槽和原因追踪未成交 | `GET /api/demand` | `app/modules/demand/service.py` `app/modules/demand/buckets.py` | `tests/test_demand.py` |
 | M5 调拨试算 | 验证行程并比较逐站、逐笔差量 | `GET /api/dispatch` `POST /api/dispatch/preview` `POST /api/dispatch/publish` | `app/modules/dispatch/constraints.py` `app/modules/dispatch/compare.py` | `tests/test_dispatch.py` |
-| M6 库存勾稽 | 核对各站期末及全网车辆守恒 | `GET /api/inventory` | `app/modules/inventory/service.py` `app/modules/inventory/stations.py` | `tests/test_inventory.py` |
-| M7 班次方案留档 | 幂等重跑、回切和下载归档证据 | `GET /api/runs` `POST /api/runs/rerun` `POST /api/runs/restore` `GET /api/runs/<run_id>/evidence.json` | `app/modules/archive/service.py` `app/modules/archive/evidence.py` `app/store.py` | `tests/test_archive.py` |
+| M6 临时管制改派 | 报告在途故障、比较落地站、发布替换行程与回执 | `GET /api/divert` `POST /api/divert/options` `POST /api/divert/preview` `POST /api/divert/publish` | `app/modules/divert/service.py` `app/modules/divert/planner.py` | `tests/test_divert.py` |
+| M7 库存勾稽 | 核对各站期末及全网车辆守恒 | `GET /api/inventory` | `app/modules/inventory/service.py` `app/modules/inventory/stations.py` | `tests/test_inventory.py` |
+| M8 班次方案留档 | 幂等重跑、回切和下载归档证据 | `GET /api/runs` `POST /api/runs/rerun` `POST /api/runs/restore` `GET /api/runs/<run_id>/evidence.json` | `app/modules/archive/service.py` `app/modules/archive/evidence.py` `app/store.py` | `tests/test_archive.py` |
 
 ## 陷阱登记
 
@@ -34,9 +35,14 @@
 | TRAP-23 | `events.csv` 的 0009 正好处于 08:15 | 同一笔计进两个槽位 | 时槽按左闭右开分配 | `app/modules/demand/buckets.py` | `tests/test_demand.py::test_boundary_bucketing_does_not_double_count` |
 | TRAP-25 | `capacity.csv` 002 的同修订容量相互矛盾 | 落点随文件顺序变化 | 隔离同修订冲突，从剩余候选选最高版本 | `app/modules/capacity/versions.py` | `tests/test_capacity.py::test_conflicting_revisions_are_quarantined_together` |
 | TRAP-26 | 样例班次更新后旧页面再发布 | 覆盖当前计划 | 事务内校验当前编号并返回 409 | `app/store.py` | `tests/test_archive.py::test_stale_publish_rejected_and_archive_can_be_restored` |
+| TRAP-27 | 同一故障在原方案和改派页各点一次发布 | 生成第二份改派、同一故障两套去向 | `diversions` 以故障编号唯一，重试沿用原班次并标 `reused` | `app/store.py` | `tests/test_divert.py::test_retrying_same_fault_never_creates_a_second_diversion` |
+| TRAP-28 | 改派落地站当时已满桩 | 车辆无处落地仍发布 | 比较与发布都按落地时点模拟，整趟受挫返回 `DROP_FULL` | `app/modules/divert/planner.py` `app/modules/replay/service.py` | `tests/test_divert.py::test_failed_diversion_keeps_old_plan_and_adds_no_archive` |
+| TRAP-29 | 改派发布途中存储失败 | 旧方案已被覆盖或留下半份故障档 | 单事务写故障、改派、班次与当前指针，失败整体回滚 | `app/store.py` | `tests/test_divert.py::test_storage_failure_rolls_back_diversion_archive` |
+| TRAP-30 | 受阻车后续还有一趟 | 只改当前趟，后面按旧路径继续 | 同一车受阻趟之后未出发的行程一并作废并在回执列出 | `app/modules/divert/planner.py` | `tests/test_divert.py::test_receipt_lists_superseded_follow_on_legs` |
 
 ## 对账规则
 
 - 收件数 = 采信数 + 隔离数，空行和重现表头计入隔离。容量表按输入版本记录数勾稽，生效区间可由一条记录产生多段。
 - 成交数 + 未成交数 = 有效尝试数，且事件编号逐一对齐。
 - 站点期末 = 期初 + 成功还车 + 调入 − 成功借车 − 调出。每个动作后的全网车辆总量等于各站桩上、暂存、在骑、调拨在途之和。
+- 改派前后全网车辆总数不变；回执的 `fleet.ok` 同时要求改派前、改派后与期初相等。

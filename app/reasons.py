@@ -20,4 +20,10 @@ REASONS = {
     'NO_ACCEPTED_EVENTS': '无可采信事件，请修正文件', 'BODY_TOO_LARGE': '文件体积超限',
     'BAD_REQUEST': '请求格式无效', 'REPLAY_DRIFT': '重跑结果与历史记录不一致',
     'STORE_UNAVAILABLE': '班次存储暂不可用，请重试',
+    'BAD_FAULT': '故障报告格式无效', 'FAULT_LEG_UNKNOWN': '故障行程不存在',
+    'FAULT_NOT_FOUND': '未找到故障记录', 'FAULT_OUTSIDE_LEG': '故障时点不在该趟运输途中',
+    'DUPLICATE_FAULT': '同一故障已发布过改派', 'FAULT_CONFLICT': '同一故障编号内容不一致',
+    'RECEIPT_NOT_FOUND': '该班次没有改派回执',
+    'DIVERT_NO_DOCK': '落地站空桩不足', 'DIVERT_NO_CHANGE': '改派未改变原方案',
+    'BAD_CHOICE': '改派去向无效',
 }

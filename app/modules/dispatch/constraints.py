@@ -9,7 +9,7 @@ from app.errors import DomainError
 FIELDS = {'id', 'truck', 'from', 'to', 'depart', 'arrive', 'count'}
 
 
-def validate_plan(shift, draft):
+def validate_plan(shift, draft, allow_same=False):
     if not isinstance(draft, list) or len(draft) > MAX_LEGS:
         raise DomainError('BAD_PLAN', limit=MAX_LEGS)
     ids, per_truck = set(), defaultdict(list)
@@ -25,7 +25,7 @@ def validate_plan(shift, draft):
                 raise DomainError('BAD_PLAN', leg=key, field=field)
         if leg['from'] not in shift.stations or leg['to'] not in shift.stations:
             raise DomainError('UNKNOWN_STATION', leg=key)
-        if leg['from'] == leg['to']:
+        if leg['from'] == leg['to'] and not allow_same:
             raise DomainError('SAME_STATION', leg=key)
         truck = shift.trucks.get(leg['truck'])
         if truck is None:
